@@ -1,0 +1,4 @@
+interface:
+  display_name: "PaperBanana Codex"
+  short_description: "Academic figures with local PaperBananaBench references"
+  default_prompt: "Use $paperbanana-codex to create an academic figure from my method text with local PaperBananaBench references."

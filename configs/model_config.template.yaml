@@ -1,0 +1,9 @@
+# Optional external API fallback. Native Codex mode ignores this file.
+defaults:
+  main_model_name: "gemini-3.1-pro-preview"
+  image_gen_model_name: "gemini-3.1-flash-image-preview"
+
+api_keys:
+  google_api_key: ""
+  openrouter_api_key: ""
+
