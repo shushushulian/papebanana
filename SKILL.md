@@ -8,6 +8,36 @@ description: Create publication-ready academic mechanism diagrams and quantitati
 Use PaperBananaBench as retrieval-only few-shot context. Do not train or fine-tune a
 model. Read only `ref.json`; never use `test.json` as a reference source.
 
+## Resume an interrupted native render
+
+Before dataset validation, retrieval, or planning, detect whether the user explicitly
+asks to continue or retry the previous native render without changing its source,
+caption, or task. If so, read the latest matching checkpoint:
+
+```powershell
+python "<SKILL_ROOT>/scripts/run_artifacts.py" resume `
+  --base-dir paperbanana_outputs `
+  --task diagram `
+  --backend native
+```
+
+When the command returns a JSON object:
+
+1. Reuse its `output_dir`, `selected_references`, `final_description`, parameters, and
+   exact `render_prompt`.
+2. Call image generation immediately with that `render_prompt`.
+3. Do not validate the dataset, retrieve references, inspect reference images, rerun
+   Planner or Stylist, or rewrite the render prompt.
+4. If image generation fails again, keep `.paperbanana-state.json` unchanged and
+   report the failure. Never delete the checkpoint or retrieval file after a failed
+   render.
+5. If generation succeeds, continue with Critic inspection and normal manifest
+   creation. A successful manifest removes the consumed checkpoint.
+
+When the command returns `null`, explain that no resumable render exists and continue
+as a new run. Never resume a checkpoint when the user supplies changed source content,
+caption, task, or explicitly asks for new references.
+
 ## Resolve the request
 
 1. Treat the skill directory containing this file as `SKILL_ROOT`.
@@ -41,6 +71,12 @@ python "<SKILL_ROOT>/scripts/validate_dataset.py" --task diagram
 Stop on structural errors. Warn and continue when individual reference images are
 missing.
 
+For a new native run, create its durable run directory before retrieval:
+
+```powershell
+python "<SKILL_ROOT>/scripts/run_artifacts.py" prepare
+```
+
 ## Retrieve references
 
 Create a compact English retrieval query containing the domain, intended figure type,
@@ -52,7 +88,7 @@ python "<SKILL_ROOT>/scripts/retrieve_references.py" `
   --task diagram `
   --query "<retrieval query>" `
   --limit 20 `
-  --output "<temporary-json>"
+  --output "<run-dir>/retrieval.json"
 ```
 
 Read the candidate JSON. Inspect up to eight leading images with the local image-view
@@ -79,15 +115,40 @@ Perform the roles in order:
 3. **Visualizer:** render the image.
 4. **Critic:** compare the image against the source, caption, and specification.
 
-Keep the final specification in memory and save it temporarily for the run manifest.
+Keep the final specification in memory and prepare the exact render prompt before
+calling image generation.
+
+## Checkpoint a native render
+
+Immediately before the first native image-generation call, save the source hash,
+selected reference IDs, final specification, parameters, and exact render prompt:
+
+```powershell
+python "<SKILL_ROOT>/scripts/run_artifacts.py" checkpoint `
+  --output-dir "<run-dir>" `
+  --task diagram `
+  --backend native `
+  --source-file "<temporary-source-file>" `
+  --caption "<caption>" `
+  --description-file "<temporary-description-file>" `
+  --render-prompt-file "<temporary-render-prompt-file>" `
+  --references-file "<temporary-selected-reference-ids-json>" `
+  --parameters-file "<temporary-parameters-json>"
+```
+
+Verify that `<run-dir>/.paperbanana-state.json` exists before calling image generation.
+The checkpoint may contain the render prompt but stores only a hash of the original
+source text. Delete temporary source, description, prompt, and parameter files after
+the checkpoint is verified. Keep the checkpoint and `retrieval.json` until the final
+manifest succeeds.
 
 ## Render a diagram
 
 Require the Codex image-generation capability. If it is unavailable, explain that
 native diagram rendering cannot proceed. Do not silently use an external API.
 
-1. Call image generation with the styled specification. Do not pass reference images
-   as source images for a new figure.
+1. Call image generation with the exact checkpointed render prompt. Do not pass
+   reference images as source images for a new figure.
 2. Inspect the generated image.
 3. Critique factual fidelity, missing modules, arrow direction, text correctness,
    readability, and aesthetics.
@@ -159,12 +220,6 @@ Never print, copy, or store API keys.
 
 ## Save outputs
 
-Create a unique run directory:
-
-```powershell
-python "<SKILL_ROOT>/scripts/run_artifacts.py" prepare
-```
-
 Default outputs:
 
 - Diagram: `final.png`, `run.json`
@@ -173,5 +228,6 @@ Default outputs:
 Write the manifest with `scripts/run_artifacts.py manifest`. Include the task, backend,
 caption, selected reference IDs, final specification, parameters, warnings, and output
 filenames. The script stores only a source hash, not the source text or credentials.
-Delete retrieval JSON, temporary source copies, intermediate descriptions, failed
-images, and temporary Plot code after the final files are verified.
+After the manifest succeeds, delete `retrieval.json`, temporary source copies,
+intermediate descriptions, failed images, and temporary Plot code. Never perform this
+cleanup after a failed image-generation call.
